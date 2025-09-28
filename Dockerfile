@@ -1,21 +1,31 @@
+# We will use Ubuntu 24.04 and CUDA 12.8.1 as a base, as specified
 ARG UBUNTU_VERSION=24.04
 ARG CUDA_VERSION=12.8.1
 
-# Target the CUDA build image
+# Target CUDA base images
 ARG BASE_CUDA_DEV_CONTAINER=nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION}
 ARG BASE_CUDA_RUN_CONTAINER=nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION}
 
 # Build-time ROCm base (CUDA devel + ROCm)
 FROM ${BASE_CUDA_DEV_CONTAINER} AS build-rocm-base
 
-# Set frontend to noninteractive
-ENV DEBIAN_FRONTEND=noninteractive
+# Install build tools and dependencies
+RUN apt-get update && \
+    apt-get install -y build-essential cmake python3 python3-pip git \
+    libcurl4-openssl-dev libgomp1 wget xz-utils zstd \
+    libxcb-xinput0 libxcb-xinerama0 libxcb-cursor-dev \
+    libnuma1 kmod rsync dialog \
+    gfortran git-lfs ninja-build cmake g++ pkg-config xxd patchelf automake libtool python3-venv python3-dev libegl1-mesa-dev
 
-# --- THIS IS THE CORRECTED APT-BASED ROCM INSTALL ---
-#RUN apt-get update && apt-get install -y --no-install-recommends     build-essential wget curl gpg ca-certificates cmake git     libcurl4-openssl-dev libgomp1 libnuma1 kmod     libxcb-xinput0 libxcb-xinerama0 libxcb-cursor-dev     && curl -fsSL "https://repo.radeon.com/rocm/rocm%20GPG%20Key.gpg" | gpg --dearmor -o /usr/share/keyrings/rocm.gpg     && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/6.1.1 noble main" > /etc/apt/sources.list.d/rocm.list     && printf "Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 1001" > /etc/apt/preferences.d/rocm-pin-1001     && apt-get update
-RUN apt-get update && apt-get install -y --no-install-recommends     build-essential wget curl gpg ca-certificates cmake git     libcurl4-openssl-dev libgomp1 libnuma1 kmod     && curl -fsSL "https://repo.radeon.com/rocm/rocm.gpg.key" | gpg --dearmor -o /usr/share/keyrings/rocm.gpg     && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/6.3.3 noble main" > /etc/apt/sources.list.d/rocm.list     && printf "Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 1001" > /etc/apt/preferences.d/rocm-pin-1001     && apt-get update
-# Install the full ROCm SDK
-RUN apt-get install -y --no-install-recommends rocm-hip-sdk rocblas-dev hipblas-dev rocm-smi-lib     && apt-get clean && rm -rf /var/lib/apt/lists/*
+# Install ROCm from official repository
+RUN --mount=type=cache,target=/cache/amdgpu-build \
+    if [ ! -f /cache/amdgpu-build/amdgpu-install_7.0.1.70001-1_all.deb ]; then \
+        wget https://repo.radeon.com/amdgpu-install/7.0.1/ubuntu/noble/amdgpu-install_7.0.1.70001-1_all.deb -O /cache/amdgpu-build/amdgpu-install_7.0.1.70001-1_all.deb; \
+    fi && \
+    apt-get update && \
+    apt-get install -y /cache/amdgpu-build/amdgpu-install_7.0.1.70001-1_all.deb && \
+    apt update && \
+    apt install -y rocm
 
 # Set ROCm environment variables
 ENV ROCM_PATH=/opt/rocm
@@ -26,27 +36,37 @@ ENV LD_LIBRARY_PATH=$ROCM_PATH/lib:$ROCM_PATH/lib64:$LD_LIBRARY_PATH
 # Build stage with Vulkan SDK
 FROM build-rocm-base AS build
 
+# GPU architecture configuration
+ARG CUDA_DOCKER_ARCH=86
+ARG AMDGPU_TARGETS=gfx1100
+ARG LLAMA_COMMIT=1d660d2fae42ea2e1d3569638e722bf7a37b6b19
+
 # Install Vulkan SDK
 ARG VULKAN_VERSION=1.4.321.1
-RUN ARCH=$(uname -m) &&     wget -qO /tmp/vulkan-sdk.tar.xz "https://sdk.lunarg.com/sdk/download/${VULKAN_VERSION}/linux/vulkansdk-linux-${ARCH}-${VULKAN_VERSION}.tar.xz" &&     mkdir -p /opt/vulkan &&     tar -xf /tmp/vulkan-sdk.tar.xz -C /opt/vulkan --strip-components=1 &&     rm /tmp/vulkan-sdk.tar.xz
+RUN --mount=type=cache,target=/cache/vulkan \
+    ARCH=$(uname -m) && \
+    if [ ! -f /cache/vulkan/vulkan-sdk-linux-${ARCH}-${VULKAN_VERSION}.tar.xz ]; then \
+        wget -qO /cache/vulkan/vulkan-sdk-linux-${ARCH}-${VULKAN_VERSION}.tar.xz https://sdk.lunarg.com/sdk/download/${VULKAN_VERSION}/linux/vulkan-sdk-linux-${ARCH}-${VULKAN_VERSION}.tar.xz; \
+    fi && \
+    mkdir -p /opt/vulkan && \
+    tar -xf /cache/vulkan/vulkan-sdk-linux-${ARCH}-${VULKAN_VERSION}.tar.xz -C /tmp --strip-components=1 && \
+    mv /tmp/${ARCH}/* /opt/vulkan/ && \
+    rm -rf /tmp/*
 
 # Set Vulkan environment variables
 ENV VULKAN_SDK=/opt/vulkan
 ENV PATH=$VULKAN_SDK/bin:$PATH
 ENV LD_LIBRARY_PATH=$VULKAN_SDK/lib:$LD_LIBRARY_PATH
 
-# Set Architectures
-ARG CUDA_DOCKER_ARCH=86
-ARG AMDGPU_TARGETS=gfx1100
-ARG LLAMA_COMMIT=master
-
-# Clone llama.cpp
-WORKDIR /
-RUN git clone https://github.com/ggml-org/llama.cpp.git
-WORKDIR /llama.cpp
+# Clone llama.cpp and set working directory
+WORKDIR /app
+RUN git clone --branch master --single-branch --recurse-submodules https://github.com/ggerganov/llama.cpp.git --config advice.detachedHead=false
+WORKDIR /app/llama.cpp 
+# The patch step is commented out to avoid the "corrupt patch" error.
+# COPY rocwmma.patch .
+# RUN git apply rocwmma.patch
 
 # Build with CUDA, ROCm, and Vulkan backends
-#RUN HIPCXX="$(hipconfig -l)/clang" HIP_PATH="$(hipconfig -R)"     cmake -B build     -DGGML_CUDA=ON -DGGML_HIP=ON     -DAMDGPU_TARGETS=${AMDGPU_TARGETS}     -DCMAKE_CUDA_ARCHITECTURES=${CUDA_DOCKER_ARCH}     -DCMAKE_SHARED_LINKER_FLAGS="-L/usr/local/cuda/lib64/stubs"     -DCMAKE_BUILD_TYPE=Release &&     cmake --build build --config Release -j$(nproc)
 RUN CMAKE_ARGS="" && \
     if [ "${CUDA_DOCKER_ARCH}" != "default" ]; then \
         CMAKE_ARGS="${CMAKE_ARGS} -DCMAKE_CUDA_ARCHITECTURES=${CUDA_DOCKER_ARCH}"; \
@@ -56,9 +76,10 @@ RUN CMAKE_ARGS="" && \
     -DGGML_NATIVE=OFF \
     -DGGML_CUDA=ON \
     -DGGML_HIP=ON \
-    -DLLAMA_MM_SUPPORT=OFF \
+    -DGGML_VULKAN=ON \
+    -DGGML_HIP_ROCWMMA_FATTN=ON \
+    -DGGML_SCHED_MAX_COPIES=1 \
     -DGGML_BACKEND_DL=ON \
-    -DGGML_CPU_ALL_VARIANTS=ON \
     -DLLAMA_BUILD_TESTS=OFF \
     -DAMDGPU_TARGETS=${AMDGPU_TARGETS} \
     -DCMAKE_BUILD_TYPE=Release \
@@ -66,25 +87,76 @@ RUN CMAKE_ARGS="" && \
     -DCMAKE_EXE_LINKER_FLAGS=-Wl,--allow-shlib-undefined . && \
     cmake --build build --config Release -j$(nproc)
 
-# --- Runtime Image ---
-FROM ${BASE_CUDA_RUN_CONTAINER} AS runtime
+RUN mkdir -p /app/lib && \
+    find build -name "*.so" -exec cp {} /app/lib \;
+
+RUN mkdir -p /app/full && \
+    cp build/bin/* /app/full && \
+    cp *.py /app/full && \
+    cp -r gguf-py /app/full && \
+    cp -r requirements /app/full && \
+    cp requirements.txt /app/full && \
+    cp .devops/tools.sh /app/full/tools.sh
+
+# Runtime ROCm base (CUDA runtime + ROCm)
+FROM ${BASE_CUDA_RUN_CONTAINER} AS runtime-rocm-base
 
 # Install runtime dependencies
-RUN apt-get update &&     apt-get install -y libgomp1 curl libvulkan-dev libnuma1 kmod &&     apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && \
+    apt-get install -y libgomp1 curl wget libvulkan-dev libnuma1 kmod rsync dialog zstd && \
+    apt autoremove -y && \
+    apt clean -y && \
+    rm -rf /tmp/* /var/tmp/* && \
+    find /var/cache/apt/archives /var/lib/apt/lists -not -name lock -type f -delete && \
+    find /var/cache -type f -delete
 
-# Copy pre-installed ROCm from build stage
-COPY --from=build-rocm-base /opt/rocm /opt/rocm
+# Install ROCm from official repository
+RUN --mount=type=cache,target=/cache/amdgpu-runtime \
+    if [ ! -f /cache/amdgpu-runtime/amdgpu-install_7.0.1.70001-1_all.deb ]; then \
+        wget https://repo.radeon.com/amdgpu-install/7.0.1/ubuntu/noble/amdgpu-install_7.0.1.70001-1_all.deb -O /cache/amdgpu-runtime/amdgpu-install_7.0.1.70001-1_all.deb; \
+    fi && \
+    apt-get update && \
+    apt-get install -y /cache/amdgpu-runtime/amdgpu-install_7.0.1.70001-1_all.deb && \
+    apt update && \
+    apt install -y rocm
 
 # Set ROCm environment variables
 ENV ROCM_PATH=/opt/rocm
 ENV HIP_PATH=/opt/rocm
 ENV PATH=$ROCM_PATH/bin:$PATH
 ENV LD_LIBRARY_PATH=$ROCM_PATH/lib:$ROCM_PATH/lib64:$LD_LIBRARY_PATH
+
+# Base runtime image
+FROM runtime-rocm-base AS base
+
+COPY --from=build /app/lib/ /app
+
+# Full runtime image
+FROM base AS full
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 ENV NVIDIA_VISIBLE_DEVICES=all
 
-# Copy compiled llama.cpp binaries from the build stage
-COPY --from=build /llama.cpp/build/bin/* /usr/local/bin/
+
+COPY --from=build /app/full /app
 
 WORKDIR /app
-ENTRYPOINT ["/bin/bash"]
+
+RUN apt-get update \
+    && apt-get install -y \
+    git \
+    python3 \
+    python3-pip \
+    python3-wheel \
+    pciutils \
+    vulkan-tools \
+    mesa-utils \
+    rocm-smi \
+    && pip install --break-system-packages -r requirements.txt \
+    && apt autoremove -y \
+    && apt clean -y \
+    && rm -rf /tmp/* /var/tmp/* \
+    && find /var/cache/apt/archives /var/lib/apt/lists -not -name lock -type f -delete \
+    && find /var/cache -type f -delete
+
+
+# Server and light omitted
