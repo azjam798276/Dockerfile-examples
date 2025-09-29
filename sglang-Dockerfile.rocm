@@ -1,9 +1,8 @@
 # ==============================================================================
 # Unified Dockerfile for SGLang on AMD Radeon RX 7900 Series (gfx1100)
 #
-# BASE OS: Ubuntu 24.04 (Noble) for native Python 3.12 support.
-# This file adapts the multi-stage build process from vLLM's Dockerfile.rocm_base
-# to compile all dependencies from source and then install SGLang.
+# STRATEGY: Compile PyTorch and Triton from source for Python 3.12.
+# AITer is removed due to lack of gfx1100 support.
 # ==============================================================================
 
 # --- Build Arguments (Configured for gfx1100 on Ubuntu 24.04) ---
@@ -14,15 +13,8 @@ ARG PYTORCH_BRANCH="b2fb6885"
 ARG PYTORCH_VISION_BRANCH="v0.23.0"
 ARG PYTORCH_REPO="https://github.com/ROCm/pytorch.git"
 ARG PYTORCH_VISION_REPO="https://github.com/pytorch/vision.git"
-ARG AITER_BRANCH="2ab9f4cd"
-ARG AITER_REPO="https://github.com/ROCm/aiter.git"
 ARG PYTHON_VERSION=3.12
-
-# --- GFX1100 Specific Settings ---
 ARG PYTORCH_ROCM_ARCH=gfx1100
-ARG AITER_ROCM_ARCH=gfx1100
-ARG FA_BRANCH="0e60e394"
-ARG FA_REPO="https://github.com/Dao-AILab/flash-attention.git"
 
 
 # ==============================================================================
@@ -33,19 +25,17 @@ FROM ${BASE_IMAGE} AS base
 # --- Re-declare ARGs to bring them into this build stage's scope ---
 ARG PYTHON_VERSION
 ARG PYTORCH_ROCM_ARCH
-ARG AITER_ROCM_ARCH
 
 # --- Environment Setup ---
 ENV PATH=/opt/rocm/llvm/bin:/opt/rocm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ENV ROCM_PATH=/opt/rocm
 ENV LD_LIBRARY_PATH=/opt/rocm/lib:/usr/local/lib:
 ENV PYTORCH_ROCM_ARCH=${PYTORCH_ROCM_ARCH}
-ENV AITER_ROCM_ARCH=${AITER_ROCM_ARCH}
 
 WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive
 
-# --- Python Installation (Simplified for Ubuntu 24.04) ---
+# --- Python & System Dependencies ---
 RUN apt-get update -y \
     && apt-get install -y --no-install-recommends \
        software-properties-common git curl sudo vim less libgfortran5 \
@@ -63,7 +53,6 @@ RUN pip install -U --break-system-packages --ignore-installed packaging 'cmake<4
 FROM base AS build_triton
 ARG TRITON_BRANCH
 ARG TRITON_REPO
-# CORRECTED: Removed "cd python" as setup.py is in the repo root for this commit
 RUN git clone ${TRITON_REPO} \
     && cd triton \
     && git checkout ${TRITON_BRANCH} \
@@ -89,19 +78,7 @@ RUN git clone ${PYTORCH_REPO} pytorch \
     && mkdir -p /app/install && cp /app/pytorch/dist/*.whl /app/install \
     && cp /app/vision/dist/*.whl /app/install
 
-# --- Build AITer ---
-FROM base AS build_aiter
-ARG AITER_BRANCH
-ARG AITER_REPO
-RUN --mount=type=bind,from=build_pytorch,src=/app/install/,target=/install \
-    pip install --break-system-packages --ignore-installed /install/*.whl
-RUN git clone --recursive ${AITER_REPO} \
-    && cd aiter \
-    && git checkout ${AITER_BRANCH} \
-    && git submodule update --init --recursive \
-    && pip install --break-system-packages --ignore-installed -r requirements.txt \
-    && pip install --break-system-packages --ignore-installed pyyaml && PREBUILD_KERNELS=1 GPU_ARCHS=${AITER_ROCM_ARCH} python3 setup.py bdist_wheel --dist-dir=dist \
-    && mkdir -p /app/install && cp /app/aiter/dist/*.whl /app/install
+# --- AITer build stage is removed ---
 
 # ==============================================================================
 # STAGE 3: Collate Wheels
@@ -111,8 +88,6 @@ RUN mkdir /app/debs
 RUN --mount=type=bind,from=build_triton,src=/app/install/,target=/install \
     cp /install/*.whl /app/debs
 RUN --mount=type=bind,from=build_pytorch,src=/app/install/,target=/install \
-    cp /install/*.whl /app/debs
-RUN --mount=type=bind,from=build_aiter,src=/app/install/,target=/install \
     cp /install/*.whl /app/debs
 
 # ==============================================================================
@@ -141,6 +116,7 @@ ENV HIP_FORCE_DEV_KERNARG=1
 ENV HSA_NO_SCRATCH_RECLAIM=1
 ENV SGLANG_SET_CPU_AFFINITY=1
 ENV SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN=1
-ENV SGLANG_USE_AITER=1
+
+# --- SGLANG_USE_AITER env var is removed ---
 
 CMD ["/bin/bash"]
