@@ -1,0 +1,21 @@
+docker run -d \
+    --name sglang-official-gfx1100-container \
+    --ipc=host \
+    --privileged \
+    --shm-size 16g \
+    --device=/dev/kfd \
+    --device=/dev/dri \
+    --group-add video \
+    --cap-add=SYS_PTRACE \
+    --security-opt seccomp=unconfined \
+    -e LD_LIBRARY_PATH=/opt/rocm/lib \
+    -e CUDA_HOME=/opt/rocm \
+    -v /mnt/models:/app/models \
+    -p 8000:8000 \
+    sglang-official-gfx1100:latest \
+    python3 -m sglang.launch_server \
+    --model-path /app/models/Qwen/Qwen3-4B-Thinking-2507/ \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --tp 1 \
+    --chat-template qwen3
