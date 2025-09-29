@@ -1,0 +1,20 @@
+I get ``` /usr/local/lib/python3.12/dist-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+/app/sglang/python/sglang/srt/layers/quantization/awq.py:62: UserWarning: Only CUDA and HIP support AWQ currently.
+  warnings.warn(f"Only CUDA and HIP support AWQ currently.")
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/app/sglang/python/sglang/launch_server.py", line 6, in <module>
+    from sglang.srt.entrypoints.http_server import launch_server
+  File "/app/sglang/python/sglang/srt/entrypoints/http_server.py", line 51, in <module>
+    from sglang.srt.entrypoints.engine import _launch_subprocesses
+  File "/app/sglang/python/sglang/srt/entrypoints/engine.py", line 45, in <module>
+    from sglang.srt.managers.data_parallel_controller import (
+  File "/app/sglang/python/sglang/srt/managers/data_parallel_controller.py", line 41, in <module>
+    from sglang.srt.managers.scheduler import run_scheduler_process
+  File "/app/sglang/python/sglang/srt/managers/scheduler.py", line 47, in <module>
+    from sglang.srt.disaggregation.decode_kvcache_offload_manager import (
+  File "/app/sglang/python/sglang/srt/disaggregation/decode_kvcache_offload_manager.py", line 7, in <module>
+    from sglang import ServerArgs
+ImportError: cannot import name 'ServerArgs' from 'sglang' (unknown location) ```
