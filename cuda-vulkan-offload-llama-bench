@@ -1,8 +1,13 @@
+Champion config : 
 ./llama-bench \
   -m /app/models/ggml-org/gpt-oss-120b-GGUF/gpt-oss-120b-mxfp4-00001-of-00003.gguf \
   -ngl 99 \
   -dev CUDA0/Vulkan0/Vulkan1 \
   -ts 1/0/0 \
-  -ot "blk.[0-9].*attn_.*=CUDA0;blk.[0-9].ffn_.*_exps.=Vulkan0;blk.1[0-7].ffn_.*_exps.=Vulkan1;blk.1[0-7].*attn_.*=Vulkan1;blk.1[8-9]|2[0-9]|3[0-6].*exps.=CPU" \
+  -ot "blk.[0-9].*attn_.*=CUDA0;blk.[0-9].ffn_.*_exps.=Vulkan0;blk.1[0-7].ffn_.*_exps.=Vulkan1;blk.1[0-7].*attn_.*=Vulkan1;blk.1[8-9].*exps.=Vulkan0;blk.2[0-1].*exps.=Vulkan1;blk.(2[2-9]|3[0-6]).ffn_(gate|up|down)_exps.=CPU" \
   -p 512 \
   -n 128
+| model                          |       size |     params | backend    | ngl | dev          | ts           | ot                    |            test |                  t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ------------ | ------------ | --------------------- | --------------: | -------------------: |
+| gpt-oss 120B MXFP4 MoE         |  59.02 GiB |   116.83 B | CUDA,ROCm,Vulkan |  99 | CUDA0/Vulkan0/Vulkan1 | 1.00         | blk.[0-9].*attn_.*=CUDA0;blk.[0-9].ffn_.*_exps.=Vulkan0;blk.1[0-7].ffn_.*_exps.=Vulkan1;blk.1[0-7].*attn_.*=Vulkan1;blk.1[8-9].*exps.=Vulkan0;blk.2[0-1].*exps.=Vulkan1;blk.(2[2-9]|3[0-6]).ffn_(gate|up|down)_exps.=CPU |           pp512 |        308.31 ± 4.33 |
+| gpt-oss 120B MXFP4 MoE         |  59.02 GiB |   116.83 B | CUDA,ROCm,Vulkan |  99 | CUDA0/Vulkan0/Vulkan1 | 1.00         | blk.[0-9].*attn_.*=CUDA0;blk.[0-9].ffn_.*_exps.=Vulkan0;blk.1[0-7].ffn_.*_exps.=Vulkan1;blk.1[0-7].*attn_.*=Vulkan1;blk.1[8-9].*exps.=Vulkan0;blk.2[0-1].*exps.=Vulkan1;blk.(2[2-9]|3[0-6]).ffn_(gate|up|down)_exps.=CPU |           tg128 |         30.69 ± 0.07 |
