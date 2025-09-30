@@ -1,0 +1,8 @@
+./llama-bench \
+  -m /app/models/ggml-org/gpt-oss-120b-GGUF/gpt-oss-120b-mxfp4-00001-of-00003.gguf \
+  -ngl 99 \
+  -dev CUDA0/Vulkan0/Vulkan1 \
+  -ts 1/0/0 \
+  -ot "blk.[0-9].*attn_.*=CUDA0;blk.[0-9].ffn_.*_exps.=Vulkan0;blk.1[0-7].ffn_.*_exps.=Vulkan1;blk.1[0-7].*attn_.*=Vulkan1;blk.1[8-9].*exps.=Vulkan0;blk.2[0-1].*exps.=Vulkan1;blk.(2[2-9]|3[0-6]).ffn_(gate|up|down)_exps.=CPU" \
+  -p 512 \
+  -n 128
