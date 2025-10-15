@@ -1,0 +1,31 @@
+./llama-server \
+    --model /app/models/unsloth/Qwen3-Coder-30B-A3B-Instruct-1M-GGUF/Qwen3-Coder-30B-A3B-Instruct-1M-UD-Q4_K_XL.gguf \
+    --host 0.0.0.0 \
+    --port 8080 \
+    --n-gpu-layers 99 \
+    --flash-attn on \
+    --n-cpu-moe 30 \
+    --ctx-size 32768 \
+    --threads -1 \
+    --temp 0.7 \
+    --top-p 0.8 \
+    --top-k 20 \
+    --min-p 0.0 \
+    --repeat-penalty 1.05 \
+    --no-context-shift \
+    --cache-type-k q8_0 \
+    --cache-type-v q8_0
+=============================================================================================================
+    ./llama-bench \
+    -m /app/models/unsloth/Qwen3-Coder-30B-A3B-Instruct-1M-GGUF/Qwen3-Coder-30B-A3B-Instruct-1M-UD-Q4_K_XL.gguf \
+    -ngl 99 \
+    --n-cpu-moe 30 \
+    --flash-attn on \
+    -t 16 \
+    -p 512 \
+    -n 128 \
+
+    | model                          |       size |     params | backend    | ngl | threads |            test |                  t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | ------: | --------------: | -------------------: |
+| qwen3moe 30B.A3B Q4_K - Medium |  16.47 GiB |    30.53 B | CUDA       |  99 |      16 |          pp2048 |        539.13 ± 0.00 |
+| qwen3moe 30B.A3B Q4_K - Medium |  16.47 GiB |    30.53 B | CUDA       |  99 |      16 |           tg128 |         35.97 ± 0.00 |
