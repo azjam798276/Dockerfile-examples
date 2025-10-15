@@ -4,7 +4,7 @@
     --port 8080 \
     --n-gpu-layers 99 \
     --flash-attn on \
-    --n-cpu-moe 30 \
+    --n-cpu-moe 34 \
     --ctx-size 32768 \
     --threads -1 \
     --temp 0.7 \
@@ -14,7 +14,9 @@
     --repeat-penalty 1.05 \
     --no-context-shift \
     --cache-type-k q8_0 \
-    --cache-type-v q8_0
+    --cache-type-v q8_0 
+
+vram usage : 7626MiB /   8188MiB
 =============================================================================================================
     ./llama-bench \
     -m /app/models/unsloth/Qwen3-Coder-30B-A3B-Instruct-1M-GGUF/Qwen3-Coder-30B-A3B-Instruct-1M-UD-Q4_K_XL.gguf \
